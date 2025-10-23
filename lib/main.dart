@@ -18,9 +18,9 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  const String serverClientId = '793520647227-0agknl7ve4rbe84ulgcipjml6si8avc0.apps.googleusercontent.com';
+  const String clientId = '793520647227-0agknl7ve4rbe84ulgcipjml6si8avc0.apps.googleusercontent.com';
   await GoogleSignIn.instance.initialize(
-    serverClientId: serverClientId, // Provide the Web Client ID here
+    clientId: clientId, // Provide the Web Client ID here
   );
 
   // Initialize all services

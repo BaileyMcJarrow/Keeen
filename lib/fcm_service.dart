@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'local_notification.dart'; // Using your existing service
 
@@ -62,4 +63,17 @@ class FcmService {
     // 4. Set the background message handler
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
+
+  Future<void> saveTokenToFirestore() async {
+  final fcmToken = await _fcm.getToken();
+  if (fcmToken != null) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      // We'll need to access FirestoreService here - you might want to initialize it
+      print("FCM Token to save: $fcmToken");
+      // TODO: You'll need to call FirestoreService.updateUserToken here
+      // This requires refactoring to access FirestoreService instance
+    }
+  }
+}
 }

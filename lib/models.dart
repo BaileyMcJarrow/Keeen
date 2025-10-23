@@ -1,6 +1,7 @@
+// lib/models.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// Represents a user in your system
+// AppUser class remains the same
 class AppUser {
   final String uid;
   final String? email;
@@ -13,17 +14,27 @@ class AppUser {
     this.displayName,
     this.fcmTokens = const [],
   });
-  
-  // Convert to/from Firestore map
+
   Map<String, dynamic> toMap() => {
-    'uid': uid,
-    'email': email,
-    'displayName': displayName,
-    'fcmTokens': fcmTokens,
-  };
+        'uid': uid,
+        'email': email,
+        'displayName': displayName,
+        'fcmTokens': fcmTokens,
+      };
+
+  // Optional: Factory to create AppUser from Firestore doc if you need to display member names
+  factory AppUser.fromDoc(DocumentSnapshot doc) {
+     Map data = doc.data() as Map<String, dynamic>;
+     return AppUser(
+       uid: doc.id,
+       email: data['email'],
+       displayName: data['displayName'],
+       fcmTokens: List<String>.from(data['fcmTokens'] ?? []),
+     );
+  }
 }
 
-// Represents a group
+// Group class remains the same
 class Group {
   final String id;
   final String name;
@@ -37,7 +48,6 @@ class Group {
     required this.memberUids,
   });
 
-  // Convert from a Firestore snapshot
   factory Group.fromDoc(DocumentSnapshot doc) {
     Map data = doc.data() as Map<String, dynamic>;
     return Group(
@@ -49,50 +59,48 @@ class Group {
   }
 }
 
-// Represents an activity within a group
+// Represents an activity within a group (MODIFIED)
 class Activity {
   final String id;
   final String name;
   final String createdByUid;
-  final DateTime activityTime; // The time the activity is happening
-  final DateTime createdAt;
+  final Timestamp createdAt; // Keep track of when the *definition* was created
+  // Removed activityTime - it's now set dynamically on activation
 
   Activity({
     required this.id,
     required this.name,
     required this.createdByUid,
-    required this.activityTime,
     required this.createdAt,
   });
-  
+
   factory Activity.fromDoc(DocumentSnapshot doc) {
     Map data = doc.data() as Map<String, dynamic>;
     return Activity(
       id: doc.id,
       name: data['name'] ?? '',
       createdByUid: data['createdByUid'] ?? '',
-      activityTime: (data['activityTime'] as Timestamp).toDate(),
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
+      createdAt: data['createdAt'] ?? Timestamp.now(), // Use current time as fallback
     );
   }
 }
 
-// Represents a user's response to an activity
+// ActivityResponse remains the same for now
 class ActivityResponse {
   final String uid; // The user who responded
   final bool isKeen;
   final DateTime respondedAt;
-  
+
   ActivityResponse({
     required this.uid,
     required this.isKeen,
     required this.respondedAt,
   });
-  
+
   factory ActivityResponse.fromDoc(DocumentSnapshot doc) {
     Map data = doc.data() as Map<String, dynamic>;
     return ActivityResponse(
-      uid: doc.id, // The doc ID will be the user's UID
+      uid: doc.id,
       isKeen: data['isKeen'] ?? false,
       respondedAt: (data['respondedAt'] as Timestamp).toDate(),
     );
