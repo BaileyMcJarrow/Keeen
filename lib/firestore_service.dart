@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'models.dart'; // Import your models
+// Import the renamed AppUser if you need it elsewhere, otherwise remove if unused
+import 'models.dart'; 
+// IMPORT FIREBASE AUTH USER explicitly
+import 'package:firebase_auth/firebase_auth.dart' show User;
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -7,15 +10,26 @@ class FirestoreService {
   // --- USER METHODS ---
   
   // Create a new user document when they sign up
-  Future<void> createUser(AppUser user, String fcmToken) async {
+  Future<void> createUser(User user, String fcmToken) async { 
     final userRef = _db.collection('users').doc(user.uid);
-    AppUser appUser = AppUser(
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName,
-      fcmTokens: [fcmToken], // Add their first FCM token
-    );
-    await userRef.set(appUser.toMap());
+
+    final userData = {
+      'uid': user.uid,
+      'email': user.email, 
+      'displayName': user.displayName, 
+      'fcmTokens': [fcmToken], 
+    };
+
+    final docSnapshot = await userRef.get();
+    if (!docSnapshot.exists) {
+      await userRef.set(userData);
+      print("Firestore document created for user: ${user.uid}");
+    } else {
+       print("Firestore document already exists for user: ${user.uid}");
+       // Optionally update the FCM token array here
+       await userRef.update({'fcmTokens': FieldValue.arrayUnion([fcmToken])});
+       print("Updated FCM token for existing user: ${user.uid}");
+    }
   }
 
   // --- GROUP METHODS ---
