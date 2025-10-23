@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "793520647227",
+    "project_id": "keeen-d5806",
+    "storage_bucket": "keeen-d5806.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:793520647227:android:9d01f147339d4abe22801e",
+        "android_client_info": {
+          "package_name": "com.example.flut1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDwxSx76UJAt7maWFLZCDwILL5yMMJtOnc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
