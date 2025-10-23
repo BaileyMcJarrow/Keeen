@@ -8,8 +8,7 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   
   // VERIFY: Initialization - this is the standard way
-  final GoogleSignIn _googleSignIn = GoogleSignIn(); 
-  
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;  
   final FirestoreService _firestoreService = FirestoreService(); 
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
@@ -77,46 +76,47 @@ class AuthService {
   // --- GOOGLE SIGN-IN ---
   Future<User?> signInWithGoogle() async {
     try {
-      // VERIFY: Method call - signIn() is called on the instance
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn(); 
+      // FIX: Use authenticate() instead of signIn()
+      final GoogleSignInAccount? googleUser = await _googleSignIn.authenticate(); // <--- CHANGE HERE
+
       if (googleUser == null) {
+        // The user canceled the sign-in
         print("Google Sign-In cancelled by user.");
         return null;
       }
 
-      // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      // Obtain the auth details (This part relies on GoogleSignInAuthentication being recognized)
+      final GoogleSignInAuthentication googleAuth = googleUser.authentication;
 
-      // Create a new credential for Firebase
+      // Create a Firebase credential
       final OAuthCredential credential = GoogleAuthProvider.credential(
-        // VERIFY: Getter access - accessToken is on googleAuth
-        accessToken: googleAuth.accessToken, 
-        idToken: googleAuth.idToken,
+        accessToken: null, // Note: accessToken might be null depending on platform/scopes
+        idToken: googleAuth.idToken,         // idToken is generally what Firebase needs
       );
 
-      // Sign in to Firebase with the credential
+      // Sign in to Firebase
       final UserCredential userCredential = await _auth.signInWithCredential(credential);
       print("Signed in with Google: ${userCredential.user?.uid}");
 
-      // --- Create user document (uses firebase_auth User) ---
-      if (userCredential.user != null && (userCredential.additionalUserInfo?.isNewUser ?? false)) {
-         print("New Google user detected, creating Firestore entry.");
+      // Create/Update Firestore document
+      if (userCredential.user != null) {
          final fcmToken = await FirebaseMessaging.instance.getToken() ?? 'no_token_yet';
-         User firebaseUser = userCredential.user!; 
-         // The createUser method now accepts the firebase_auth User type
-         await _firestoreService.createUser(firebaseUser, fcmToken); 
-         print("Firestore document created for Google user.");
-      } else if (userCredential.user != null) {
-        print("Existing Google user logged in.");
-         // Optionally update FCM token for existing user on login
-         final fcmToken = await FirebaseMessaging.instance.getToken() ?? 'no_token_yet';
-         await _firestoreService.updateUserToken(userCredential.user!.uid, fcmToken);
+         if (userCredential.additionalUserInfo?.isNewUser ?? false) {
+            print("New Google user, creating Firestore entry.");
+            User firebaseUser = userCredential.user!;
+            await _firestoreService.createUser(firebaseUser, fcmToken);
+            print("Firestore document created.");
+         } else {
+           print("Existing Google user logged in.");
+            // Ensure updateUserToken is implemented in FirestoreService
+            await _firestoreService.updateUserToken(userCredential.user!.uid, fcmToken);
+         }
       }
-      // -------------------------------------------------------------------------
 
       return userCredential.user;
     } on FirebaseAuthException catch (e) {
       print("Google Sign-In Firebase Error: ${e.message}");
+      // Handle specific errors like 'account-exists-with-different-credential' if needed
       rethrow;
     } catch (e) {
       print("Google Sign-In General Error: $e");

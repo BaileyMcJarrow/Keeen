@@ -32,6 +32,20 @@ class FirestoreService {
     }
   }
 
+  Future<void> updateUserToken(String uid, String fcmToken) async {
+    final userRef = _db.collection('users').doc(uid);
+    try {
+      // Atomically add the new token to the array if it doesn't exist
+      await userRef.update({
+        'fcmTokens': FieldValue.arrayUnion([fcmToken])
+      });
+      print("Updated FCM token for user: $uid");
+    } catch (e) {
+      print("Error updating FCM token for user $uid: $e");
+      // Consider more robust error handling if needed
+    }
+  }
+
   // --- GROUP METHODS ---
 
   Future<DocumentReference> createGroup(String groupName, String createdByUid) async {

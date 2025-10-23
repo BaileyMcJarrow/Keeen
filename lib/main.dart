@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import 'firebase_options.dart';
 import 'local_notification.dart'; // Your existing service
@@ -15,6 +16,11 @@ void main() async {
   // Initialize Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  const String serverClientId = '793520647227-0agknl7ve4rbe84ulgcipjml6si8avc0.apps.googleusercontent.com';
+  await GoogleSignIn.instance.initialize(
+    serverClientId: serverClientId, // Provide the Web Client ID here
   );
 
   // Initialize all services
