@@ -181,23 +181,23 @@ class GroupDetailsScreen extends StatelessWidget {
                  children: [
                    _TimeOptionButton(
                      label: 'Now',
-                     onPressed: () => _handleTimeSelection(dialogContext, viewModel, activity, currentUser, 0, 'now'),
+                     onPressed: () => _handleTimeSelection(context, dialogContext, viewModel, activity, currentUser, 0, 'now'),
                    ),
                    _TimeOptionButton(
                      label: 'In 5 min',
-                     onPressed: () => _handleTimeSelection(dialogContext, viewModel, activity, currentUser, 5, 'in 5 minutes'),
+                     onPressed: () => _handleTimeSelection(context, dialogContext, viewModel, activity, currentUser, 5, 'in 5 minutes'),
                    ),
                     _TimeOptionButton(
                      label: 'In 15 min',
-                     onPressed: () => _handleTimeSelection(dialogContext, viewModel, activity, currentUser, 15, 'in 15 minutes'),
+                     onPressed: () => _handleTimeSelection(context, dialogContext, viewModel, activity, currentUser, 15, 'in 15 minutes'),
                    ),
                     _TimeOptionButton(
                      label: 'In 30 min',
-                     onPressed: () => _handleTimeSelection(dialogContext, viewModel, activity, currentUser, 30, 'in 30 minutes'),
+                     onPressed: () => _handleTimeSelection(context, dialogContext, viewModel, activity, currentUser, 30, 'in 30 minutes'),
                    ),
                    _TimeOptionButton(
                      label: 'In 1 hour',
-                     onPressed: () => _handleTimeSelection(dialogContext, viewModel, activity, currentUser, 60, 'in 1 hour'),
+                     onPressed: () => _handleTimeSelection(context, dialogContext, viewModel, activity, currentUser, 60, 'in 1 hour'),
                    ),
                    // Add more options if needed
                  ],
@@ -218,6 +218,7 @@ class GroupDetailsScreen extends StatelessWidget {
 
   // --- Handle Time Selection ---
   void _handleTimeSelection(
+    BuildContext mainPageContext,
     BuildContext dialogContext, // Context from the dialog
     GroupDetailsViewModel viewModel,
     Activity activity,
@@ -228,16 +229,19 @@ class GroupDetailsScreen extends StatelessWidget {
     final activationTime = DateTime.now().add(Duration(minutes: minutesFromNow));
     final userName = currentUser.displayName ?? currentUser.email ?? 'Someone'; // Get user's name
 
+    // Get the ScaffoldMessenger from the main page *before* the await
+    final scaffoldMessenger = ScaffoldMessenger.of(mainPageContext);
+    
     try {
-      // Close the time dialog first
+      // 1. Pop the dialog using its own context
       Navigator.pop(dialogContext);
 
-       // Show a confirmation or loading indicator
-       ScaffoldMessenger.of(dialogContext).showSnackBar(
-           SnackBar(content: Text('Notifying group about "${activity.name}" $timeDescription...')),
-       );
+      // 2. Use the main page's messenger
+      scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text('Notifying group about "${activity.name}" $timeDescription...')),
+      );
 
-
+      // 3. This will now throw a visible error
       await viewModel.activateActivity(
         activityId: activity.id,
         activityName: activity.name,
@@ -247,16 +251,16 @@ class GroupDetailsScreen extends StatelessWidget {
         timeDescription: timeDescription,
       );
 
-      // Confirmation feedback (optional, depends if activateActivity throws)
-       ScaffoldMessenger.of(dialogContext).showSnackBar(
-           const SnackBar(content: Text('Notification process triggered!')),
-       );
+      // 4. This will only show on success
+      scaffoldMessenger.showSnackBar(
+          const SnackBar(content: Text('Notification process triggered!')),
+      );
 
     } catch (e) {
-      // Show error if activation fails
-       ScaffoldMessenger.of(dialogContext).showSnackBar(
-           SnackBar(content: Text('Error: ${e.toString()}')),
-       );
+      // 5. This will finally work!
+      scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text('Error: ${e.toString()}')),
+      );
     }
   }
 }
