@@ -1,1 +1,45 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"keeen-d5806","appId":"1:793520647227:android:9d01f147339d4abe22801e","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"keeen-d5806","configurations":{"android":"1:793520647227:android:9d01f147339d4abe22801e","ios":"1:793520647227:ios:68f365ae0ac7aff622801e"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "keeen-d5806",
+          "appId": "1:793520647227:android:9d01f147339d4abe22801e",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "keeen-d5806",
+          "configurations": {
+            "android": "1:793520647227:android:9d01f147339d4abe22801e",
+            "ios": "1:793520647227:ios:68f365ae0ac7aff622801e"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run lint",
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ],
+      "source": "functions"
+    }
+  ],
+  "firestore": {
+    "database": "(default)",
+    "location": "africa-south1",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

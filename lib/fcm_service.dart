@@ -1,46 +1,47 @@
+// lib/fcm_service.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'local_notification.dart'; // Using your existing service
+import 'firestore_service.dart'; // Import FirestoreService
 
-// This must be a top-level function (not in a class)
+// Background handler remains the same
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // If you're going to use other Firebase services in the background,
-  // make sure you call initializeApp first
-  // await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  
   print("Handling a background message: ${message.messageId}");
-  // You can process the message here. 
-  // The notification is typically handled by FCM automatically on Android.
+  // await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform); // Needed if using other Firebase services
 }
 
 class FcmService {
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final NotificationService _localNotifications = NotificationService();
+  final FirestoreService _firestoreService; // Added FirestoreService instance
+
+  // Constructor requires FirestoreService
+  FcmService({required FirestoreService firestoreService})
+      : _firestoreService = firestoreService;
 
   Future<void> init() async {
-    // 1. Request permissions (required for iOS)
+    // 1. Request permissions
     NotificationSettings settings = await _fcm.requestPermission(
-      alert: true,
-      announcement: false,
-      badge: true,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
-      sound: true,
+      alert: true, announcement: false, badge: true, carPlay: false,
+      criticalAlert: false, provisional: false, sound: true,
     );
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      print('User granted permission');
-    } else {
-      print('User declined or has not accepted permission');
-    }
+      print('User granted notification permission');
 
-    // 2. Get the FCM token for this device
-    final fcmToken = await _fcm.getToken();
-    print("FCM Token: $fcmToken");
-    // TODO: Save this token to your user's document in Firestore!
-    // e.g., _firestoreService.saveUserToken(fcmToken);
+      // 2. Get and save the FCM token (if user is logged in)
+      await saveTokenToFirestore();
+
+      // Listen for token refreshes and save them too
+      _fcm.onTokenRefresh.listen((newToken) async {
+        print("FCM Token Refreshed: $newToken");
+        await saveTokenToFirestore(token: newToken); // Pass the new token
+      });
+
+    } else {
+      print('User declined or has not accepted notification permission');
+    }
 
     // 3. Listen for foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
@@ -49,13 +50,11 @@ class FcmService {
 
       if (message.notification != null) {
         print('Message also contained a notification: ${message.notification}');
-        
-        // Use your existing local notification service to show it
         _localNotifications.showNotification(
-          message.hashCode, // Use a unique ID
+          message.hashCode,
           message.notification!.title ?? 'New Message',
           message.notification!.body ?? '',
-          message.data.toString(),
+          message.data['groupId'] ?? message.data.toString(), // Example payload
         );
       }
     });
@@ -64,16 +63,27 @@ class FcmService {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   }
 
-  Future<void> saveTokenToFirestore() async {
-  final fcmToken = await _fcm.getToken();
-  if (fcmToken != null) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      // We'll need to access FirestoreService here - you might want to initialize it
-      print("FCM Token to save: $fcmToken");
-      // TODO: You'll need to call FirestoreService.updateUserToken here
-      // This requires refactoring to access FirestoreService instance
+  // Helper method to save the token
+  Future<void> saveTokenToFirestore({String? token}) async {
+    // Get the token if not provided (e.g., on initial load)
+    final fcmToken = token ?? await _fcm.getToken();
+    print("Attempting to save FCM Token: $fcmToken");
+
+    if (fcmToken != null) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        try {
+          // Use the injected FirestoreService instance
+          await _firestoreService.updateUserToken(user.uid, fcmToken);
+          print("FCM token saved to Firestore for user ${user.uid}");
+        } catch (e) {
+          print("Error saving FCM token to Firestore: $e");
+        }
+      } else {
+        print("User not logged in, cannot save FCM token yet.");
+      }
+    } else {
+      print("Could not get FCM token.");
     }
   }
-}
 }

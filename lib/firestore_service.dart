@@ -31,14 +31,22 @@ class FirestoreService {
   Future<void> updateUserToken(String uid, String fcmToken) async {
     final userRef = _db.collection('users').doc(uid);
     try {
+      // Use arrayUnion to add the token only if it's not already present
+      // Consider adding logic to remove old/invalid tokens if necessary
       await userRef.update({'fcmTokens': FieldValue.arrayUnion([fcmToken])});
-      print("Updated FCM token for user: $uid");
+      print("Updated/Added FCM token for user: $uid");
     } catch (e) {
-      print("Error updating FCM token for user $uid: $e");
+      // If the document doesn't exist, create it (optional, depends on flow)
+      if (e is FirebaseException && e.code == 'not-found') {
+        print("User document $uid not found, cannot update token.");
+        // Decide if you want to create the user doc here or handle elsewhere
+      } else {
+        print("Error updating FCM token for user $uid: $e");
+      }
     }
   }
 
-  // Helper to get user details - needed for displaying member names
+  // getUser remains the same
   Future<AppUser?> getUser(String uid) async {
     final doc = await _db.collection('users').doc(uid).get();
     if (doc.exists) {
@@ -81,7 +89,7 @@ class FirestoreService {
             snapshot.docs.map((doc) => Group.fromDoc(doc)).toList());
   }
 
-  // Get details for a single group
+  // getGroupStream remains the same
   Stream<Group?> getGroupStream(String groupId) {
      return _db
          .collection('groups')
@@ -91,8 +99,7 @@ class FirestoreService {
   }
 
   // --- ACTIVITY METHODS ---
-
-  // MODIFIED: No longer takes activityTime
+  // addActivityToGroup remains the same
   Future<void> addActivityToGroup(
     String groupId,
     String activityName,
@@ -102,8 +109,7 @@ class FirestoreService {
       await _db.collection('groups').doc(groupId).collection('activities').add({
         'name': activityName,
         'createdByUid': createdByUid,
-        'createdAt': FieldValue.serverTimestamp(), // Store creation time
-        // 'activityTime' is removed
+        'createdAt': FieldValue.serverTimestamp(),
       });
       print('Activity "$activityName" definition created in group $groupId');
     } catch (e) {
@@ -112,55 +118,69 @@ class FirestoreService {
     }
   }
 
-  // Get activities for a group
+  // getActivitiesStream remains the same
   Stream<List<Activity>> getActivitiesStream(String groupId) {
     return _db
         .collection('groups')
         .doc(groupId)
         .collection('activities')
-        .orderBy('createdAt', descending: true) // Order by creation time
+        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) =>
             snapshot.docs.map((doc) => Activity.fromDoc(doc)).toList());
   }
 
-  // NEW: Method to signify an activity is being started
-  // This is where you'd trigger the Cloud Function in a real app
+  // ** UPDATED: Method to trigger the Cloud Function by writing activation data **
   Future<void> activateActivityAndNotify(
       {required String groupId,
       required String activityId,
       required String activityName,
       required String userId,
-      required String userName, // User display name for notification
+      required String userName,
       required DateTime activationTime,
-      required String timeDescription // e.g., "in 5 minutes"
+      required String timeDescription
       }) async {
-    // Placeholder: In a real app, you would likely call a Cloud Function here.
-    // The function would then fetch member tokens and send FCM messages.
-    print(
-        '--- NOTIFICATION SIMULATION ---');
+
+    // --- Write activation record to Firestore to trigger Cloud Function ---
+    try {
+      final activationData = {
+          'userId': userId, // User who activated
+          'userName': userName, // Their display name
+          'activationTime': Timestamp.fromDate(activationTime), // When the activity starts
+          'timeDescription': timeDescription, // e.g., "in 5 minutes"
+          'activityName': activityName, // Name of the activity
+          'groupId': groupId, // Group context
+          'activityId': activityId, // Activity context
+          'triggeredAt': FieldValue.serverTimestamp(), // Firestore server time
+        };
+
+      // Write to: /groups/{groupId}/activities/{activityId}/activations/{new_doc_id}
+      await _db.collection('groups').doc(groupId)
+        .collection('activities').doc(activityId)
+        .collection('activations').add(activationData);
+
+      print('Activation record created in Firestore for Cloud Function trigger.');
+
+    } catch (e) {
+      print('Error writing activation record: $e');
+      // Let the UI know something went wrong
+      throw Exception('Could not trigger notification process.');
+    }
+
+    // --- Keep Simulation for local feedback ---
+    print('--- NOTIFICATION TRIGGER SIMULATION (Firestore write initiated) ---');
     print('User: $userName ($userId)');
     print('Group: $groupId');
     print('Activity: $activityName ($activityId)');
     print('Is starting "$activityName" $timeDescription ($activationTime)');
-    print('Needs to notify other members via Cloud Function.');
-    print('-----------------------------');
-
-    // Optionally, you could store the activation event in Firestore for history
-    // For example, in a subcollection under the activity:
-    // await _db.collection('groups').doc(groupId)
-    //   .collection('activities').doc(activityId)
-    //   .collection('activations').add({
-    //     'userId': userId,
-    //     'userName': userName,
-    //     'activationTime': Timestamp.fromDate(activationTime),
-    //     'timeDescription': timeDescription,
-    //   });
+    print('Cloud Function should now process this Firestore event.');
+    print('-------------------------------------');
   }
 
-  // respondToActivity might be repurposed or removed depending on final logic
-  // For now, it's kept but might not be directly used in the new flow.
-  Future<void> respondToActivity({
+
+  // respondToActivity, getActivityResponsesStream, getKeenResponsesStream remain the same
+  // (You might use these later for tracking who acknowledged the notification)
+   Future<void> respondToActivity({
     required String groupId,
     required String activityId,
     required String uid,
@@ -180,7 +200,6 @@ class FirestoreService {
     });
   }
 
-  // getActivityResponsesStream and getKeenResponsesStream might also be repurposed/removed
   Stream<List<ActivityResponse>> getActivityResponsesStream(
       String groupId, String activityId) {
     return _db
