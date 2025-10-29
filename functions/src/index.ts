@@ -1,14 +1,14 @@
-// functions/src/index.ts - UPDATED FOR 2ND GEN
+// functions/src/index.ts - UPDATED
 import {
   onDocumentCreated,
 } from "firebase-functions/v2/firestore"; // Import v2 Firestore trigger
+import {onCall, HttpsError} from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger"; // Use v2 logger
 import * as admin from "firebase-admin";
 import {
   MessagingPayload,
   getMessaging,
 } from "firebase-admin/messaging"; // Updated messaging import
-
 // Initialize Firebase Admin SDK (runs once per function instance)
 try {
   admin.initializeApp();
@@ -225,3 +225,224 @@ export const sendActivityActivationNotification = onDocumentCreated(
     // No explicit return needed for onCreate typically
   }
 );
+
+/**
+ * Sends a notification to a user when they receive a group invitation.
+ * Triggered by Firestore document creation:
+ * /invitations/{invitationId}
+ */
+export const sendGroupInvitationNotification = onDocumentCreated(
+  {
+    document: "invitations/{invitationId}",
+    region: "africa-south1", // Specify your region here
+  },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) {
+      logger.log("Invitation event contained no data snapshot.");
+      return;
+    }
+
+    const invitationData = snapshot.data();
+    if (!invitationData) {
+      logger.log("Invitation snapshot data is empty.");
+      return;
+    }
+
+    const {
+      invitedUser: targetUserId,
+      groupName,
+      invitedBy: invitedByUid,
+      groupId,
+    } = invitationData;
+
+    if (!targetUserId || !groupName || !invitedByUid) {
+      logger.error(
+        "Missing targetUserId, groupName, or invitedByUid in invitation data:",
+        invitationData
+      );
+      return;
+    }
+
+    logger.log(
+      `Processing invitation: User with id ${targetUserId} ` +
+      `invited to ${groupName} by ${invitedByUid}.`
+    );
+
+    // Get the inviter's display name for the notification
+    let inviterName = "Someone";
+    try {
+      const inviterDoc = await db.collection("users").doc(invitedByUid).get();
+      if (inviterDoc.exists) {
+        inviterName = inviterDoc.data()?.displayName ||
+        inviterDoc.data()?.username || "Someone";
+      }
+    } catch (error) {
+      logger.error(`Error fetching inviter data for ${invitedByUid}:`, error);
+    }
+
+    // Get FCM Tokens for the invited user
+    const tokens: string[] = [];
+    try {
+      const userDoc = await db.collection("users").doc(targetUserId).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        const userTokens = userData?.fcmTokens as string[] | undefined;
+        if (
+          userTokens &&
+          Array.isArray(userTokens) &&
+          userTokens.length > 0
+        ) {
+          tokens.push(...userTokens);
+        } else {
+          logger.log(`User ${targetUserId} has no FCM tokens.`);
+        }
+      }
+    } catch (error) {
+      logger.error(`Error fetching user data for ${targetUserId}:`, error);
+    }
+
+    const uniqueTokens = [
+      ...new Set(tokens.filter((t) => typeof t === "string" && t.length > 0)),
+    ];
+
+    if (uniqueTokens.length === 0) {
+      logger.log(`No valid FCM tokens found for invited user ${targetUserId}.`);
+      return;
+    }
+
+    logger.log(
+      `Found ${uniqueTokens.length} unique tokens for invited user `+
+      `${targetUserId}.`
+    );
+
+    // Construct Notification Payload
+    const messagePayload: MessagingPayload = {
+      notification: {
+        title: "You're Invited!",
+        body: `${inviterName} has invited you to join the group "`+
+        `${groupName}"!`,
+      },
+      data: {
+        groupId: groupId,
+        groupName: groupName,
+        invitedBy: inviterName, // Send inviter's name
+        invitationId: event.params.invitationId,
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
+        type: "group_invitation", // Custom type to handle in Flutter
+      },
+    };
+
+    // Send Notifications
+    logger.log("Sending FCM message for invitation to tokens:", uniqueTokens);
+    try {
+      const response = await getMessaging().sendEachForMulticast({
+        tokens: uniqueTokens,
+        notification: messagePayload.notification,
+        data: messagePayload.data,
+        android: {
+          priority: "high",
+        },
+        apns: {
+          payload: {
+            aps: {
+              contentAvailable: true,
+            },
+          },
+          headers: {
+            "apns-priority": "10",
+          },
+        },
+      });
+
+      logger.log(
+        `FCM invitation send finished for user ${targetUserId}. `+
+        `Success: ${response.successCount}, Failure: ${response.failureCount}`
+      );
+
+      if (response.failureCount > 0) {
+        response.responses.forEach((result, index) => {
+          const error = result.error;
+          if (error) {
+            const failedToken = uniqueTokens[index];
+            logger.error("Failed to send invitation to token: "+
+              `${failedToken}`, error);
+            // TODO: Implement token cleanup if necessary
+          }
+        });
+      }
+    } catch (error) {
+      logger.error("Error sending FCM invitation messages for "+
+        `user ${targetUserId}:`, error);
+    }
+  }
+);
+
+export const searchUsers = onCall({region: "africa-south1"}, async (request) =>{
+  const search = request.data.search as string;
+
+  // --- MODIFIED: Only check for type, not length ---
+  if (typeof search !== "string") {
+    throw new HttpsError(
+      "invalid-argument",
+      "The function must be called with one argument 'search' "+
+      "containing the search query."
+    );
+  }
+
+  logger.log(`Searching for users with query: "${search}"`);
+
+  try {
+    // Create a set to store unique user IDs and avoid duplicates
+    const userIds = new Set<string>();
+    const userPromises: Promise<admin.firestore.QuerySnapshot>[] = [];
+
+    // --- MODIFIED: Handle empty search string ---
+    if (search.length === 0) {
+      // If search is empty, get all users
+      logger.log("Empty search query, fetching all users.");
+      userPromises.push(db.collection("users").get());
+    } else {
+      // If search is not empty, perform prefix search
+      logger.log("Non-empty query, performing prefix search.");
+      // Search by username
+      userPromises.push(
+        db.collection("users")
+          .where("username", ">=", search)
+          .where("username", "<=", search + "\uf8ff")
+          .get()
+      );
+
+      // Search by email
+      userPromises.push(
+        db.collection("users")
+          .where("email", ">=", search)
+          .where("email", "<=", search + "\uf8ff")
+          .get()
+      );
+    }
+    // --- END MODIFICATION ---
+
+    const snapshots = await Promise.all(userPromises);
+
+    const users: admin.firestore.DocumentData[] = [];
+    snapshots.forEach((snapshot) => {
+      snapshot.forEach((doc) => {
+        if (!userIds.has(doc.id)) {
+          userIds.add(doc.id);
+          users.push({...doc.data(), uid: doc.id}); // Add uid to the object
+        }
+      });
+    });
+
+    logger.log(`Found ${users.length} users matching "${search}"`);
+    return {users};
+  } catch (error) {
+    logger.error("Error searching for users:", error);
+    throw new HttpsError(
+      "internal",
+      "An error occurred while searching for users.",
+      error
+    );
+  }
+});

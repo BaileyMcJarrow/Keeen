@@ -1,4 +1,5 @@
 // lib/screens/group_details_screen.dart
+import 'package:flut1/screens/find_users_screen.dart';
 import 'package:flut1/models.dart';
 import 'package:flut1/view_models/group_details_view_model.dart';
 import 'package:flutter/material.dart';
@@ -6,7 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart'; // For formatting time
 
-class GroupDetailsScreen extends StatelessWidget {
+class GroupDetailsScreen extends StatefulWidget {
   final String groupId;
   final String groupName;
 
@@ -17,17 +18,198 @@ class GroupDetailsScreen extends StatelessWidget {
   });
 
   @override
+  State<GroupDetailsScreen> createState() => _GroupDetailsScreenState();
+}
+
+class _GroupDetailsScreenState extends State<GroupDetailsScreen> {
+  final TextEditingController _activityNameController = TextEditingController();
+
+  // --- MODIFIED: Now accepts context and viewModel ---
+  void _addActivityDefinitionDialog(BuildContext consumerContext, GroupDetailsViewModel viewModel) {
+    _activityNameController.clear();
+    
+    // Get messenger from the *state's* context.
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    // Get user from the *state's* context (it's provided at the root).
+    final user = Provider.of<User?>(context, listen: false);
+
+    showDialog(
+      context: consumerContext, // Use the context from the Consumer
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Add New Activity Type to "${widget.groupName}"'),
+        content: TextField(
+          controller: _activityNameController,
+          decoration: const InputDecoration(hintText: 'e.g., Go for a beer, Play chess'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final activityName = _activityNameController.text.trim();
+              if (activityName.isEmpty) {
+                // Show snackbar inside dialog
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                   const SnackBar(content: Text('Please enter an activity name')),
+                );
+                return;
+              }
+
+              if (user != null) {
+                try {
+                  // Await the async call using the passed-in viewModel
+                  await viewModel.addActivityDefinition(
+                    activityName,
+                    user.uid,
+                  );
+                  Navigator.pop(dialogContext); // Pop dialog *after* success
+                  scaffoldMessenger.showSnackBar( // Use main messenger
+                    const SnackBar(content: Text('Activity type added!')),
+                  );
+                } catch (e) {
+                   Navigator.pop(dialogContext); // Pop on error
+                   scaffoldMessenger.showSnackBar(
+                     SnackBar(content: Text('Error adding activity: $e')),
+                   );
+                }
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Confirmation Dialog Helper ---
+  Future<bool> _showConfirmationDialog(String title, String content) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false; // Return false if dialog is dismissed
+  }
+
+  void _leaveGroup(GroupDetailsViewModel viewModel, String uid) async {
+    final confirmed = await _showConfirmationDialog(
+      'Leave Group?',
+      'Are you sure you want to leave "${widget.groupName}"?',
+    );
+    if (confirmed && mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      final navigator = Navigator.of(context);
+      try {
+        await viewModel.leaveGroup(uid);
+        navigator.pop(); // Go back to group list
+        messenger.showSnackBar(
+          SnackBar(content: Text('You have left "${widget.groupName}"')),
+        );
+      } catch (e) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Error leaving group: $e')),
+        );
+      }
+    }
+  }
+
+  void _deleteGroup(GroupDetailsViewModel viewModel) async {
+     final confirmed = await _showConfirmationDialog(
+      'Delete Group?',
+      'Are you sure you want to permanently delete "${widget.groupName}"? This cannot be undone.',
+    );
+    if (confirmed && mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      final navigator = Navigator.of(context);
+      try {
+        await viewModel.deleteGroup();
+        navigator.pop(); // Go back to group list
+        messenger.showSnackBar(
+          SnackBar(content: Text('Group "${widget.groupName}" deleted')),
+        );
+      } catch (e) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Error deleting group: $e')),
+        );
+      }
+    }
+  }
+
+
+  @override
+  void dispose() {
+    _activityNameController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Provide the ViewModel for this screen
     return ChangeNotifierProvider(
-      create: (_) => GroupDetailsViewModel(groupId),
+      create: (_) => GroupDetailsViewModel(widget.groupId),
       child: Consumer<GroupDetailsViewModel>(
         builder: (context, viewModel, child) {
-          final user = Provider.of<User?>(context); // Get current user
+          final user = Provider.of<User?>(context);
 
           return Scaffold(
             appBar: AppBar(
-              title: Text(groupName),
+              title: Text(widget.groupName),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.person_add),
+                  tooltip: 'Invite Users',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => FindUsersScreen(groupId: widget.groupId, groupName: widget.groupName),
+                      ),
+                    );
+                  },
+                ),
+                if (user != null) // Only show menu if user is loaded
+                  PopupMenuButton<String>(
+                    onSelected: (value) {
+                      if (value == 'leave') {
+                        _leaveGroup(viewModel, user.uid);
+                      } else if (value == 'delete') {
+                        _deleteGroup(viewModel);
+                      }
+                    },
+                    itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                      const PopupMenuItem<String>(
+                        value: 'leave',
+                        child: Text('Leave Group'),
+                      ),
+                      if (viewModel.group != null && viewModel.group!.createdByUid == user.uid)
+                        PopupMenuItem<String>(
+                          value: 'delete',
+                          child: Text(
+                            'Delete Group',
+                            style: TextStyle(color: Theme.of(context).colorScheme.error),
+                          ),
+                        ),
+                    ],
+                  ),
+              ],
             ),
             body: user == null
                 ? const Center(child: CircularProgressIndicator())
@@ -51,6 +233,12 @@ class GroupDetailsScreen extends StatelessWidget {
                       Expanded(child: _buildActivitiesList(context, viewModel, user)),
                     ],
                   ),
+            floatingActionButton: FloatingActionButton(
+              // --- MODIFIED: Pass consumer context and viewModel ---
+              onPressed: () => _addActivityDefinitionDialog(context, viewModel),
+              tooltip: 'Add Activity',
+              child: const Icon(Icons.add),
+            ),
           );
         },
       ),
@@ -104,11 +292,10 @@ class GroupDetailsScreen extends StatelessWidget {
      );
   }
 
-
   // Helper to build Activities List
   Widget _buildActivitiesList(BuildContext context, GroupDetailsViewModel viewModel, User currentUser) {
     return StreamBuilder<List<Activity>>(
-      stream: viewModel.firestoreService.getActivitiesStream(groupId),
+      stream: viewModel.firestoreService.getActivitiesStream(widget.groupId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -122,7 +309,7 @@ class GroupDetailsScreen extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.all(16.0),
               child: Text(
-                'No activity types defined for this group yet.\nGo back and add some!',
+                'No activity types defined for this group yet.\nTap the + button to add some!',
                  textAlign: TextAlign.center,
               ),
             ),
@@ -133,22 +320,48 @@ class GroupDetailsScreen extends StatelessWidget {
           itemCount: activities.length,
           itemBuilder: (context, index) {
             final activity = activities[index];
-            return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              child: ListTile(
-                title: Text(activity.name),
-                subtitle: Text('Added ${DateFormat.yMd().add_jm().format(activity.createdAt.toDate())}'), // Show creation time
-                leading: const Icon(Icons.directions_run), // Example Icon
-                trailing: ElevatedButton(
-                   child: const Text('Keen?'),
-                   onPressed: () {
-                     _showTimeSelectionDialog(context, viewModel, activity, currentUser);
-                   },
+            final bool canDelete = activity.createdByUid == currentUser.uid;
+
+            return Dismissible(
+              key: Key(activity.id),
+              direction: canDelete ? DismissDirection.endToStart : DismissDirection.none,
+              background: Container(
+                color: Theme.of(context).colorScheme.error,
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                child: Icon(
+                  Icons.delete,
+                  color: Theme.of(context).colorScheme.onError,
                 ),
-                // Or make the whole tile tappable:
-                // onTap: () {
-                //   _showTimeSelectionDialog(context, viewModel, activity, currentUser);
-                // },
+              ),
+              confirmDismiss: (direction) async {
+                if (!canDelete) return false;
+                return await _showConfirmationDialog(
+                  'Delete Activity?',
+                  'Are you sure you want to delete "${activity.name}"?',
+                );
+              },
+              onDismissed: (direction) {
+                if (canDelete) {
+                  viewModel.deleteActivity(activity.id);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Activity "${activity.name}" deleted')),
+                  );
+                }
+              },
+              child: Card(
+                margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                child: ListTile(
+                  title: Text(activity.name),
+                  subtitle: Text('Added ${DateFormat.yMd().add_jm().format(activity.createdAt.toDate())}'),
+                  leading: const Icon(Icons.directions_run), // Example Icon
+                  trailing: ElevatedButton(
+                     child: const Text('Keen?'),
+                     onPressed: () {
+                       _showTimeSelectionDialog(context, viewModel, activity, currentUser);
+                     },
+                  ),
+                ),
               ),
             );
           },
@@ -174,7 +387,6 @@ class GroupDetailsScreen extends StatelessWidget {
             children: [
               const Text('Notify group you are starting:'),
               const SizedBox(height: 10),
-              // Use Expanded + ListView if options get long
                Wrap(
                  spacing: 8,
                  runSpacing: 8,
@@ -199,7 +411,6 @@ class GroupDetailsScreen extends StatelessWidget {
                      label: 'In 1 hour',
                      onPressed: () => _handleTimeSelection(context, dialogContext, viewModel, activity, currentUser, 60, 'in 1 hour'),
                    ),
-                   // Add more options if needed
                  ],
                )
 
@@ -227,21 +438,16 @@ class GroupDetailsScreen extends StatelessWidget {
     String timeDescription,
   ) async {
     final activationTime = DateTime.now().add(Duration(minutes: minutesFromNow));
-    final userName = currentUser.displayName ?? currentUser.email ?? 'Someone'; // Get user's name
-
-    // Get the ScaffoldMessenger from the main page *before* the await
+    final userName = currentUser.displayName ?? currentUser.email ?? 'Someone';
+    
     final scaffoldMessenger = ScaffoldMessenger.of(mainPageContext);
     
     try {
-      // 1. Pop the dialog using its own context
       Navigator.pop(dialogContext);
-
-      // 2. Use the main page's messenger
       scaffoldMessenger.showSnackBar(
-          SnackBar(content: Text('Notifying group about "${activity.name}" $timeDescription...')),
+          SnackBar(content: Text('Notifying group about "${activity.name}" $timeDescription...'))
       );
 
-      // 3. This will now throw a visible error
       await viewModel.activateActivity(
         activityId: activity.id,
         activityName: activity.name,
@@ -251,22 +457,18 @@ class GroupDetailsScreen extends StatelessWidget {
         timeDescription: timeDescription,
       );
 
-      // 4. This will only show on success
       scaffoldMessenger.showSnackBar(
-          const SnackBar(content: Text('Notification process triggered!')),
+          const SnackBar(content: Text('Notification process triggered!'))
       );
 
     } catch (e) {
-      // 5. This will finally work!
       scaffoldMessenger.showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
+          SnackBar(content: Text('Error: ${e.toString()}'))
       );
     }
   }
-}
+}     
 
-
-// Simple button for time options - Copied from previous home_screen
 class _TimeOptionButton extends StatelessWidget {
   final String label;
   final VoidCallback onPressed;
@@ -278,7 +480,7 @@ class _TimeOptionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ElevatedButton( // Changed to ElevatedButton for better visibility
+    return ElevatedButton(
       onPressed: onPressed,
       child: Text(label),
     );

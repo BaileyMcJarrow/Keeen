@@ -6,12 +6,14 @@ class AppUser {
   final String uid;
   final String? email;
   final String? displayName;
+  final String? username;
   final List<String> fcmTokens; // To send notifications
 
   AppUser({
     required this.uid,
     this.email,
     this.displayName,
+    this.username,
     this.fcmTokens = const [],
   });
 
@@ -19,6 +21,7 @@ class AppUser {
         'uid': uid,
         'email': email,
         'displayName': displayName,
+        'username': username,
         'fcmTokens': fcmTokens,
       };
 
@@ -29,8 +32,36 @@ class AppUser {
        uid: doc.id,
        email: data['email'],
        displayName: data['displayName'],
+       username: data['username'],
        fcmTokens: List<String>.from(data['fcmTokens'] ?? []),
      );
+  }
+}
+
+class GroupInvitation {
+  final String id;
+  final String groupId;
+  final String groupName;
+  final String invitedBy; // UID of user who invited
+  final String status; // pending, accepted, declined
+
+  GroupInvitation({
+    required this.id,
+    required this.groupId,
+    required this.groupName,
+    required this.invitedBy,
+    required this.status,
+  });
+
+  factory GroupInvitation.fromDoc(DocumentSnapshot doc) {
+    Map data = doc.data() as Map<String, dynamic>;
+    return GroupInvitation(
+      id: doc.id,
+      groupId: data['groupId'] ?? '',
+      groupName: data['groupName'] ?? '',
+      invitedBy: data['invitedBy'] ?? '',
+      status: data['status'] ?? 'pending',
+    );
   }
 }
 

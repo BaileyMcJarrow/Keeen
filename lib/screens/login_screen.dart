@@ -59,6 +59,8 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_isLoginMode ? 'Login' : 'Sign Up'),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        foregroundColor: Theme.of(context).colorScheme.onPrimary,
       ),
       body: Center(
         child: SingleChildScrollView( // Prevents overflow when keyboard appears
@@ -66,23 +68,43 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
+              Text(
+                'Keeen',
+                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+              ),
+              const SizedBox(height: 40),
+
               // --- Email Field ---
-              TextField(
+              TextFormField(
                 controller: _emailController,
-                decoration: const InputDecoration(labelText: 'Email'),
+                decoration: InputDecoration(
+                  labelText: 'Email',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10.0),
+                  ),
+                  prefixIcon: const Icon(Icons.email),
+                ),
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 15),
 
               // --- Password Field ---
-              TextField(
+              TextFormField(
                 controller: _passwordController,
-                decoration: const InputDecoration(labelText: 'Password'),
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10.0),
+                  ),
+                  prefixIcon: const Icon(Icons.lock),
+                ),
                 obscureText: true,
                 textInputAction: TextInputAction.done,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 30),
 
               // --- Loading Indicator ---
               if (_isLoading)
@@ -94,51 +116,81 @@ class _LoginScreenState extends State<LoginScreen> {
                     padding: const EdgeInsets.only(bottom: 15.0),
                     child: Text(
                       _errorMessage!,
-                      style: const TextStyle(color: Colors.red),
+                      style: TextStyle(color: Theme.of(context).colorScheme.error),
                       textAlign: TextAlign.center,
                     ),
                   ),
 
                 // --- Email/Password Button ---
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
-                  child: Text(_isLoginMode ? 'Login with Email' : 'Sign Up with Email'),
-                  onPressed: () {
-                    final email = _emailController.text.trim();
-                    final password = _passwordController.text.trim();
-                    if (email.isEmpty || password.isEmpty) {
-                       setState(() => _errorMessage = "Please enter email and password.");
-                       return;
-                    }
-                    if (_isLoginMode) {
-                      _performAuthAction(() => authService.signInWithEmailAndPassword(email, password));
-                    } else {
-                      _performAuthAction(() => authService.createUserWithEmailAndPassword(email, password));
-                    }
-                  },
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10.0),
+                      ),
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                    child: Text(
+                      _isLoginMode ? 'Login with Email' : 'Sign Up with Email',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                    onPressed: () {
+                      final email = _emailController.text.trim();
+                      final password = _passwordController.text.trim();
+                      if (email.isEmpty || password.isEmpty) {
+                         setState(() => _errorMessage = "Please enter email and password.");
+                         return;
+                      }
+                      if (_isLoginMode) {
+                        _performAuthAction(() => authService.signInWithEmailAndPassword(email, password));
+                      } else {
+                        _performAuthAction(() => authService.createUserWithEmailAndPassword(email, password));
+                      }
+                    },
+                  ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 15),
 
                 // --- Google Button ---
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.g_mobiledata), // Placeholder, consider using a Google logo asset
-                  label: const Text('Sign In with Google'),
-                   style: ElevatedButton.styleFrom(
-                    minimumSize: const Size.fromHeight(40),
-                    backgroundColor: Colors.white, // Style like Google button
-                    foregroundColor: Colors.black54,
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.g_mobiledata, size: 24),
+                    label: const Text('Sign In with Google', style: TextStyle(fontSize: 18)),
+                     style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10.0),
+                      ),
+                      backgroundColor: Colors.white, // Style like Google button
+                      foregroundColor: Colors.black87,
+                      side: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    onPressed: () => _performAuthAction(authService.signInWithGoogle),
                   ),
-                  onPressed: () => _performAuthAction(authService.signInWithGoogle),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 15),
                 
                 // --- Anonymous Button ---
-                 OutlinedButton(
-                   style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(40)),
-                   child: const Text('Sign In Anonymously'),
-                   onPressed: () => _performAuthAction(authService.signInAnonymously),
+                 SizedBox(
+                   width: double.infinity,
+                   child: OutlinedButton(
+                     style: OutlinedButton.styleFrom(
+                       padding: const EdgeInsets.symmetric(vertical: 15),
+                       shape: RoundedRectangleBorder(
+                         borderRadius: BorderRadius.circular(10.0),
+                       ),
+                       side: BorderSide(color: Theme.of(context).colorScheme.primary),
+                       foregroundColor: Theme.of(context).colorScheme.primary,
+                     ),
+                     child: const Text('Sign In Anonymously', style: TextStyle(fontSize: 18)),
+                     onPressed: () => _performAuthAction(authService.signInAnonymously),
+                   ),
                  ),
-                 const SizedBox(height: 20),
+                 const SizedBox(height: 30),
 
                  // --- Toggle Mode Button ---
                  TextButton(
@@ -146,6 +198,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       _isLoginMode
                           ? 'Need an account? Sign Up'
                           : 'Have an account? Login',
+                      style: TextStyle(color: Theme.of(context).colorScheme.secondary),
                     ),
                     onPressed: () {
                       setState(() {

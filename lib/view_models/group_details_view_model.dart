@@ -14,6 +14,9 @@ class GroupDetailsViewModel extends ChangeNotifier {
   List<AppUser> _members = [];
   List<AppUser> get members => _members;
 
+  bool _isLoading = true;
+  bool get isLoading => _isLoading;
+
   bool _isLoadingMembers = false;
   bool get isLoadingMembers => _isLoadingMembers;
 
@@ -21,27 +24,45 @@ class GroupDetailsViewModel extends ChangeNotifier {
 
   GroupDetailsViewModel(this.groupId) {
     _listenToGroup();
+    _fetchInitialData();
   }
 
   FirestoreService get firestoreService => _firestoreService;
 
+  Future<void> _fetchInitialData() async {
+    _isLoading = true;
+    notifyListeners();
+    // The _listenToGroup will handle setting _group and calling fetchMembers
+    await Future.delayed(const Duration(milliseconds: 500)); 
+    _isLoading = false;
+    notifyListeners();
+  }
+
   void _listenToGroup() {
     _groupSubscription?.cancel();
     _groupSubscription = _firestoreService.getGroupStream(groupId).listen((groupData) {
-      if (groupData != null && _group?.memberUids.length != groupData.memberUids.length) {
+      if (groupData != null) {
+         bool membersChanged = _group == null || _group?.memberUids.length != groupData.memberUids.length;
          _group = groupData;
-         fetchMembers(); // Refetch members if the list changes
+         if (membersChanged) {
+            fetchMembers(); // Refetch members if the list changes
+         }
       } else {
-         _group = groupData;
+         _group = null; // Group was deleted
       }
-      notifyListeners(); // Notify UI about group data change
+      _isLoading = false;
+      notifyListeners();
     });
   }
 
 
   Future<void> fetchMembers() async {
-    if (_group == null || _isLoadingMembers) return;
-
+    if (_group == null) {
+      _members = [];
+      notifyListeners();
+      return;
+    }
+    
     _isLoadingMembers = true;
     notifyListeners();
 
@@ -51,7 +72,6 @@ class GroupDetailsViewModel extends ChangeNotifier {
       if (user != null) {
         fetchedMembers.add(user);
       } else {
-         // Add a placeholder if user data is missing
          fetchedMembers.add(AppUser(uid: uid, email: 'Unknown User', displayName: uid.substring(0, 6)));
       }
     }
@@ -75,16 +95,49 @@ class GroupDetailsViewModel extends ChangeNotifier {
           activityId: activityId,
           activityName: activityName,
           userId: userId,
-          userName: userName, // Pass user's name
+          userName: userName,
           activationTime: activationTime,
           timeDescription: timeDescription,
         );
-        // Optionally show success feedback
      } catch (e) {
        print("Error activating activity: $e");
-       // Optionally show error feedback
        throw Exception("Failed to activate activity: $e");
      }
+  }
+
+  Future<void> addActivityDefinition(String activityName, String createdByUid) async {
+    if (activityName.isNotEmpty) {
+      await _firestoreService.addActivityToGroup(groupId, activityName, createdByUid);
+    }
+  }
+
+  // --- NEW METHODS ---
+
+  Future<void> leaveGroup(String uid) async {
+    try {
+      await _firestoreService.leaveGroup(groupId, uid);
+    } catch (e) {
+      print("Error leaving group: $e");
+      throw Exception("Failed to leave group: $e");
+    }
+  }
+
+  Future<void> deleteGroup() async {
+    try {
+      await _firestoreService.deleteGroup(groupId);
+    } catch (e) {
+      print("Error deleting group: $e");
+      throw Exception("Failed to delete group: $e");
+    }
+  }
+
+  Future<void> deleteActivity(String activityId) async {
+     try {
+      await _firestoreService.deleteActivity(groupId, activityId);
+    } catch (e) {
+      print("Error deleting activity: $e");
+      throw Exception("Failed to delete activity: $e");
+    }
   }
 
    @override

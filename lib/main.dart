@@ -74,8 +74,15 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Keeen',
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueAccent),
           useMaterial3: true,
+          textTheme: const TextTheme(
+            headlineLarge: TextStyle(fontSize: 32.0, fontWeight: FontWeight.bold),
+            headlineMedium: TextStyle(fontSize: 28.0, fontWeight: FontWeight.bold),
+            bodyLarge: TextStyle(fontSize: 16.0),
+            bodyMedium: TextStyle(fontSize: 14.0),
+            labelLarge: TextStyle(fontSize: 16.0, fontWeight: FontWeight.bold),
+          ),
         ),
         home: const AuthGate(),
       ),

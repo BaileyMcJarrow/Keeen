@@ -1,8 +1,5 @@
-// lib/view_models/group_list_view_model.dart
 import 'package:flut1/firestore_service.dart';
-import 'package:flutter/material.dart'; // For ChangeNotifier if needed later
 
-// Using a simple class for now, can be upgraded to ChangeNotifier if complex state arises
 class GroupListViewModel {
   final FirestoreService _firestoreService = FirestoreService();
 
@@ -12,21 +9,30 @@ class GroupListViewModel {
     if (groupName.isNotEmpty) {
       await _firestoreService.createGroup(groupName, createdByUid);
     }
-    // Add error handling if needed
   }
 
-  Future<void> inviteUserToGroup(String groupId, String userEmail) async {
-     if (userEmail.isNotEmpty) {
-       await _firestoreService.inviteUserToGroup(groupId, userEmail);
-     }
-     // Error handling is done in the dialog for immediate feedback
+  Future<void> inviteUser(String groupId, String groupName, String invitedByUid, String identifier) async {
+    if (identifier.isNotEmpty) {
+      final user = await _firestoreService.findUserByEmailOrUsername(identifier);
+      if (user != null) {
+        await _firestoreService.createGroupInvitation(groupId, groupName, invitedByUid, user.uid);
+      } else {
+        throw Exception('User not found');
+      }
+    }
   }
 
-   // Method to add a new activity *definition*
+  Future<void> acceptInvitation(String invitationId, String uid, String groupId) async {
+    await _firestoreService.acceptInvitation(invitationId, uid, groupId);
+  }
+
+  Future<void> declineInvitation(String invitationId) async {
+    await _firestoreService.declineInvitation(invitationId);
+  }
+
   Future<void> addActivityDefinition(String groupId, String activityName, String createdByUid) async {
     if (activityName.isNotEmpty) {
       await _firestoreService.addActivityToGroup(groupId, activityName, createdByUid);
     }
-     // Add error handling if needed
   }
 }

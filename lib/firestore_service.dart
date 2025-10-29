@@ -7,13 +7,13 @@ class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // --- USER METHODS ---
-  // createUser remains the same
-  Future<void> createUser(User user, String fcmToken) async {
+  Future<void> createUser(User user, String fcmToken, {String? username}) async {
     final userRef = _db.collection('users').doc(user.uid);
     final userData = {
       'uid': user.uid,
       'email': user.email,
       'displayName': user.displayName,
+      'username': username,
       'fcmTokens': [fcmToken],
     };
     final docSnapshot = await userRef.get();
@@ -27,26 +27,32 @@ class FirestoreService {
     }
   }
 
-  // updateUserToken remains the same
+  Future<bool> isUsernameAvailable(String username) async {
+    final query = await _db.collection('users').where('username', isEqualTo: username).limit(1).get();
+    return query.docs.isEmpty;
+  }
+
+  Future<void> setUsername(String uid, String username) async {
+    await _db.collection('users').doc(uid).update({'username': username});
+  }
+
   Future<void> updateUserToken(String uid, String fcmToken) async {
     final userRef = _db.collection('users').doc(uid);
     try {
-      // Use arrayUnion to add the token only if it's not already present
-      // Consider adding logic to remove old/invalid tokens if necessary
       await userRef.update({'fcmTokens': FieldValue.arrayUnion([fcmToken])});
       print("Updated/Added FCM token for user: $uid");
     } catch (e) {
-      // If the document doesn't exist, create it (optional, depends on flow)
       if (e is FirebaseException && e.code == 'not-found') {
         print("User document $uid not found, cannot update token.");
-        // Decide if you want to create the user doc here or handle elsewhere
+        // This might happen for anonymous users, let's try set with merge
+        await userRef.set({'fcmTokens': FieldValue.arrayUnion([fcmToken])}, SetOptions(merge: true));
+        print("Created/merged user document $uid with FCM token.");
       } else {
         print("Error updating FCM token for user $uid: $e");
       }
     }
   }
 
-  // getUser remains the same
   Future<AppUser?> getUser(String uid) async {
     final doc = await _db.collection('users').doc(uid).get();
     if (doc.exists) {
@@ -55,8 +61,30 @@ class FirestoreService {
     return null;
   }
 
+  Stream<AppUser?> getUserStream(String uid) {
+    return _db.collection('users').doc(uid).snapshots().map((doc) {
+      if (doc.exists) {
+        return AppUser.fromDoc(doc);
+      }
+      return null;
+    });
+  }
+
+  Future<AppUser?> findUserByEmailOrUsername(String identifier) async {
+    QuerySnapshot query;
+    if (identifier.contains('@')) {
+      query = await _db.collection('users').where('email', isEqualTo: identifier).limit(1).get();
+    } else {
+      query = await _db.collection('users').where('username', isEqualTo: identifier).limit(1).get();
+    }
+
+    if (query.docs.isNotEmpty) {
+      return AppUser.fromDoc(query.docs.first);
+    }
+    return null;
+  }
+
   // --- GROUP METHODS ---
-  // createGroup remains the same
   Future<DocumentReference> createGroup(String groupName, String createdByUid) async {
     return await _db.collection('groups').add({
       'name': groupName,
@@ -66,20 +94,68 @@ class FirestoreService {
     });
   }
 
-  // inviteUserToGroup remains the same
-  Future<void> inviteUserToGroup(String groupId, String userEmail) async {
-    final userQuery = await _db.collection('users').where('email', isEqualTo: userEmail).limit(1).get();
-    if (userQuery.docs.isNotEmpty) {
-      final userId = userQuery.docs.first.id;
-      await _db.collection('groups').doc(groupId).update({
-        'memberUids': FieldValue.arrayUnion([userId]),
-      });
-    } else {
-      throw Exception('User with email $userEmail not found');
+  Future<void> createGroupInvitation(String groupId, String groupName, String invitedByUid, String targetUserId) async {
+    // Check if user is already a member
+    final groupDoc = await _db.collection('groups').doc(groupId).get();
+    if (groupDoc.exists) {
+      final group = Group.fromDoc(groupDoc);
+      if (group.memberUids.contains(targetUserId)) {
+        throw Exception('User is already in this group');
+      }
     }
+
+    // Check for existing pending invitation
+    final existingInvite = await _db.collection('invitations')
+      .where('groupId', isEqualTo: groupId)
+      .where('invitedUser', isEqualTo: targetUserId)
+      .where('status', isEqualTo: 'pending')
+      .limit(1)
+      .get();
+    
+    if (existingInvite.docs.isNotEmpty) {
+      throw Exception('Invitation has already been sent');
+    }
+
+    await _db.collection('invitations').add({
+      'groupId': groupId,
+      'groupName': groupName,
+      'invitedBy': invitedByUid,
+      'invitedUser': targetUserId,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
-  // getGroupsStream remains the same
+  Stream<List<GroupInvitation>> getInvitationsStream(String uid) {
+    return _db
+        .collection('invitations')
+        .where('invitedUser', isEqualTo: uid)
+        .where('status', isEqualTo: 'pending')
+        .snapshots()
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => GroupInvitation.fromDoc(doc)).toList());
+  }
+
+  Future<void> acceptInvitation(String invitationId, String uid, String groupId) async {
+    WriteBatch batch = _db.batch();
+
+    // Add user to group
+    final groupRef = _db.collection('groups').doc(groupId);
+    batch.update(groupRef, {'memberUids': FieldValue.arrayUnion([uid])});
+
+    // Update invitation status
+    final invitationRef = _db.collection('invitations').doc(invitationId);
+    batch.update(invitationRef, {'status': 'accepted'});
+    
+    await batch.commit();
+  }
+
+  Future<void> declineInvitation(String invitationId) async {
+    await _db.collection('invitations').doc(invitationId).update({
+      'status': 'declined',
+    });
+  }
+
   Stream<List<Group>> getGroupsStream(String uid) {
     return _db
         .collection('groups')
@@ -89,7 +165,6 @@ class FirestoreService {
             snapshot.docs.map((doc) => Group.fromDoc(doc)).toList());
   }
 
-  // getGroupStream remains the same
   Stream<Group?> getGroupStream(String groupId) {
      return _db
          .collection('groups')
@@ -98,8 +173,24 @@ class FirestoreService {
          .map((doc) => doc.exists ? Group.fromDoc(doc) : null);
   }
 
+  // --- NEW: Leave Group ---
+  Future<void> leaveGroup(String groupId, String uid) async {
+    await _db.collection('groups').doc(groupId).update({
+      'memberUids': FieldValue.arrayRemove([uid]),
+    });
+    // TODO: Consider what happens if the creator leaves.
+    // TODO: Consider deleting the group if the last member leaves.
+  }
+
+  // --- NEW: Delete Group ---
+  Future<void> deleteGroup(String groupId) async {
+    await _db.collection('groups').doc(groupId).delete();
+    // WARNING: This is a shallow delete. Subcollections (activities,
+    // activations, responses) will NOT be deleted. A Cloud Function
+    // is required to recursively delete subcollections.
+  }
+
   // --- ACTIVITY METHODS ---
-  // addActivityToGroup remains the same
   Future<void> addActivityToGroup(
     String groupId,
     String activityName,
@@ -118,7 +209,15 @@ class FirestoreService {
     }
   }
 
-  // getActivitiesStream remains the same
+  // --- NEW: Delete Activity ---
+  Future<void> deleteActivity(String groupId, String activityId) async {
+    await _db.collection('groups').doc(groupId)
+      .collection('activities').doc(activityId)
+      .delete();
+    // This also performs a shallow delete. Activations and responses
+    // for this activity will remain. A Cloud Function is better.
+  }
+
   Stream<List<Activity>> getActivitiesStream(String groupId) {
     return _db
         .collection('groups')
@@ -130,7 +229,6 @@ class FirestoreService {
             snapshot.docs.map((doc) => Activity.fromDoc(doc)).toList());
   }
 
-  // ** UPDATED: Method to trigger the Cloud Function by writing activation data **
   Future<void> activateActivityAndNotify(
       {required String groupId,
       required String activityId,
@@ -141,20 +239,18 @@ class FirestoreService {
       required String timeDescription
       }) async {
 
-    // --- Write activation record to Firestore to trigger Cloud Function ---
     try {
       final activationData = {
-          'userId': userId, // User who activated
-          'userName': userName, // Their display name
-          'activationTime': Timestamp.fromDate(activationTime), // When the activity starts
-          'timeDescription': timeDescription, // e.g., "in 5 minutes"
-          'activityName': activityName, // Name of the activity
-          'groupId': groupId, // Group context
-          'activityId': activityId, // Activity context
-          'triggeredAt': FieldValue.serverTimestamp(), // Firestore server time
+          'userId': userId,
+          'userName': userName,
+          'activationTime': Timestamp.fromDate(activationTime),
+          'timeDescription': timeDescription,
+          'activityName': activityName,
+          'groupId': groupId,
+          'activityId': activityId,
+          'triggeredAt': FieldValue.serverTimestamp(),
         };
 
-      // Write to: /groups/{groupId}/activities/{activityId}/activations/{new_doc_id}
       await _db.collection('groups').doc(groupId)
         .collection('activities').doc(activityId)
         .collection('activations').add(activationData);
@@ -163,23 +259,10 @@ class FirestoreService {
 
     } catch (e) {
       print('Error writing activation record: $e');
-      // Let the UI know something went wrong
       throw Exception('Could not trigger notification process.');
     }
-
-    // --- Keep Simulation for local feedback ---
-    print('--- NOTIFICATION TRIGGER SIMULATION (Firestore write initiated) ---');
-    print('User: $userName ($userId)');
-    print('Group: $groupId');
-    print('Activity: $activityName ($activityId)');
-    print('Is starting "$activityName" $timeDescription ($activationTime)');
-    print('Cloud Function should now process this Firestore event.');
-    print('-------------------------------------');
   }
 
-
-  // respondToActivity, getActivityResponsesStream, getKeenResponsesStream remain the same
-  // (You might use these later for tracking who acknowledged the notification)
    Future<void> respondToActivity({
     required String groupId,
     required String activityId,
